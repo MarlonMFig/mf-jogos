@@ -1,0 +1,6 @@
+{
+  "name": "MF Jogos - Vitrine de Casas de Apostas",
+  "description": "Vitrine oficial de casas de apostas com comparativo de bônus, links de afiliados, códigos promocionais e avaliações completas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

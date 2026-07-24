@@ -1,0 +1,20 @@
+{
+  "entities": {
+    "config/houses_data": {
+      "title": "Houses Config",
+      "description": "Global list of betting houses maintained by administrator",
+      "type": "object",
+      "properties": {
+        "houses": {
+          "type": "array",
+          "description": "List of betting houses"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of last update"
+        }
+      },
+      "required": ["houses"]
+    }
+  }
+}
