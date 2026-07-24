@@ -61,7 +61,7 @@ export const Podium: React.FC<PodiumProps> = ({
           LANÇAMENTOS <span className="gold-gradient-text">DA SEMANA</span>
         </h2>
         <p className="text-sm text-slate-400 max-w-xl mx-auto">
-          Plataformas com maior taxa de aprovação de saques, melhores bônus e atendimento rápido via Pix.
+          As melhores plataformas!
         </p>
       </div>
 
