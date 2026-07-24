@@ -12,7 +12,7 @@ import { Footer } from './components/Footer';
 
 import { INITIAL_HOUSES } from './data/initialHouses';
 import { BettingHouse, Category } from './types';
-import { subscribeHouses, saveHousesToFirestore, resetHousesInFirestore } from './lib/firebase';
+import { subscribeHouses, saveHousesToFirestore, resetHousesInFirestore, subscribeAdminSettings, saveAdminPasswordToFirestore } from './lib/firebase';
 import { Sparkles, Trophy, Settings, RefreshCw, ExternalLink } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'mf_jogos_houses_v3';
@@ -84,7 +84,7 @@ export default function App() {
 
   // Subscribe to real-time Firestore database updates
   useEffect(() => {
-    const unsubscribe = subscribeHouses((updatedHouses) => {
+    const unsubscribeHouses = subscribeHouses((updatedHouses) => {
       setHouses(updatedHouses);
       try {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHouses));
@@ -92,7 +92,22 @@ export default function App() {
         console.error('Error saving to localStorage:', e);
       }
     });
-    return () => unsubscribe();
+
+    const unsubscribeSettings = subscribeAdminSettings(({ adminPassword: remotePassword }) => {
+      if (remotePassword) {
+        setAdminPassword(remotePassword);
+        try {
+          localStorage.setItem('mf_admin_password', remotePassword);
+        } catch (e) {
+          console.error('Error saving password to localStorage:', e);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeHouses();
+      unsubscribeSettings();
+    };
   }, []);
 
   const handleOpenAdminTrigger = () => {
@@ -131,6 +146,7 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+    saveAdminPasswordToFirestore(newPassword);
   };
 
   const handleCopyCode = (code: string) => {

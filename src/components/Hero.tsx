@@ -33,11 +33,6 @@ export const Hero: React.FC<HeroProps> = ({
             <span className="gold-gradient-text">MF JOGOS</span>
           </h1>
 
-          {/* Subtitle */}
-          <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-2xl mx-auto">
-            Compare depósitos mínimos, rapidez no saque via PIX, cotações altas e cadastre-se com links diretos e seguros.
-          </p>
-
           {/* Trust badges list */}
           <div className="flex flex-nowrap items-center justify-center gap-1.5 sm:gap-3 text-xs sm:text-sm font-medium pt-2 max-w-full">
             <span className="inline-flex items-center px-2 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-black tracking-wider text-red-500 bg-[#1f0b10] border border-red-600/80 shadow-sm shrink-0">

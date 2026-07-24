@@ -139,3 +139,57 @@ export async function resetHousesInFirestore(): Promise<boolean> {
   return saveHousesToFirestore(INITIAL_HOUSES);
 }
 
+/**
+ * Subscribe to real-time changes of admin settings (password) in Firestore.
+ */
+export function subscribeAdminSettings(
+  onUpdate: (settings: { adminPassword?: string }) => void
+) {
+  const settingsDocRef = doc(db, 'config', 'admin_settings');
+
+  const unsubscribe = onSnapshot(
+    settingsDocRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && typeof data.adminPassword === 'string') {
+          onUpdate({ adminPassword: data.adminPassword });
+        }
+      }
+    },
+    (error) => {
+      console.warn('Firestore admin settings listener error:', error);
+    }
+  );
+
+  return unsubscribe;
+}
+
+/**
+ * Save updated admin password to Firestore globally.
+ */
+export async function saveAdminPasswordToFirestore(newPassword: string): Promise<boolean> {
+  const payload = {
+    adminPassword: newPassword,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const settingsDocRef = doc(db, 'config', 'admin_settings');
+
+  try {
+    const writePromise = setDoc(settingsDocRef, payload, { merge: true });
+    const timeoutPromise = new Promise<boolean>((resolve) =>
+      setTimeout(() => {
+        console.warn('Firestore password save timed out, continuing locally');
+        resolve(true);
+      }, 2500)
+    );
+
+    await Promise.race([writePromise, timeoutPromise]);
+    return true;
+  } catch (err) {
+    console.warn('Firestore admin password save failed:', err);
+    return false;
+  }
+}
+

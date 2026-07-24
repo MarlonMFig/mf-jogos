@@ -15,6 +15,21 @@
         }
       },
       "required": ["houses"]
+    },
+    "config/admin_settings": {
+      "title": "Admin Settings",
+      "description": "Global administrator settings including password hash/string",
+      "type": "object",
+      "properties": {
+        "adminPassword": {
+          "type": "string",
+          "description": "Custom admin panel password"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of last update"
+        }
+      }
     }
   }
 }
