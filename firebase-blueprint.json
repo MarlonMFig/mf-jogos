@@ -42,6 +42,47 @@
         "houseClicks": { "type": "object" },
         "houseCopies": { "type": "object" }
       }
+    },
+    "config/pix_da_sorte": {
+      "title": "Pix da Sorte Campaign",
+      "description": "Settings and state for the Pix da Sorte RNG giveaway",
+      "type": "object",
+      "properties": {
+        "active": { "type": "boolean" },
+        "eventDate": { "type": "string" },
+        "pixValue": { "type": "number" },
+        "totalPrizes": { "type": "number" },
+        "claimedPrizes": { "type": "number" },
+        "winOddsPercentage": { "type": "number" },
+        "adminInstructions": { "type": "string" },
+        "winners": { "type": "array" }
+      }
+    },
+    "pix_ip_attempts/{eventDate}": {
+      "title": "Pix da Sorte IP Attempts",
+      "description": "IP attempt counters for Pix da Sorte per event date",
+      "type": "object",
+      "properties": {
+        "ipAttempts": { "type": "object" }
+      }
+    },
+    "notification_subscribers/{subId}": {
+      "title": "Notification Subscribers",
+      "description": "Device tokens and push subscriptions for PWA users",
+      "type": "object",
+      "properties": {
+        "subscribedAt": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "active": { "type": "boolean" }
+      }
+    },
+    "config/push_notifications": {
+      "title": "Push Notification Broadcasts",
+      "description": "Sent broadcast notifications log",
+      "type": "object",
+      "properties": {
+        "history": { "type": "array" }
+      }
     }
   }
 }

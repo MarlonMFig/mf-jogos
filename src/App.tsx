@@ -7,8 +7,11 @@ import { BonusCalculator } from './components/BonusCalculator';
 import { BonusRoulette } from './components/BonusRoulette';
 import { AdminModal } from './components/AdminModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { PixDaSorteModal } from './components/PixDaSorteModal';
 import { FaqSection } from './components/FaqSection';
 import { Footer } from './components/Footer';
+import { NotificationBanner } from './components/NotificationBanner';
+import { registerServiceWorker, requestNotificationPermission } from './lib/notifications';
 
 import { INITIAL_HOUSES } from './data/initialHouses';
 import { BettingHouse, Category } from './types';
@@ -21,7 +24,11 @@ import {
   subscribeAnalytics,
   resetAnalyticsInFirestore,
   recordVisitInFirestore,
-  SiteAnalytics
+  SiteAnalytics,
+  subscribePixDaSorte,
+  savePixDaSorteConfigInFirestore,
+  PixDaSorteConfig,
+  DEFAULT_PIX_DA_SORTE
 } from './lib/firebase';
 import { Sparkles, Trophy, Settings, RefreshCw, ExternalLink, Bell, BellRing, Check, X } from 'lucide-react';
 
@@ -86,6 +93,20 @@ export default function App() {
   const [isRouletteOpen, setIsRouletteOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isPixModalOpen, setIsPixModalOpen] = useState(false);
+
+  // Pix da Sorte state initialized with localStorage fallback
+  const [pixConfig, setPixConfig] = useState<PixDaSorteConfig>(() => {
+    try {
+      const saved = localStorage.getItem('mf_pix_config_v1');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Error loading pixConfig from localStorage:', e);
+    }
+    return DEFAULT_PIX_DA_SORTE;
+  });
 
   // Copy toast feedback
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -110,8 +131,9 @@ export default function App() {
 
   // Subscribe to real-time Firestore database updates
   useEffect(() => {
-    // Record visit on page mount
+    // Record visit on page mount and register Service Worker
     recordVisitInFirestore();
+    registerServiceWorker();
 
     // Subscribe to site analytics
     const unsubscribeAnalytics = subscribeAnalytics((data) => {
@@ -162,16 +184,26 @@ export default function App() {
       }
     });
 
+    const unsubscribePix = subscribePixDaSorte((updatedPixConfig) => {
+      setPixConfig(updatedPixConfig);
+      try {
+        localStorage.setItem('mf_pix_config_v1', JSON.stringify(updatedPixConfig));
+      } catch (e) {
+        console.error('Error saving pixConfig to localStorage:', e);
+      }
+    });
+
     return () => {
       unsubscribeAnalytics();
       unsubscribeHouses();
       unsubscribeSettings();
+      unsubscribePix();
     };
   }, []);
 
   const handleToggleNotifications = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
-      setUpdateToast('Notificações de navegador não são suportadas neste dispositivo.');
+      setUpdateToast('Notificações de navegador não são suportadas neste navegador.');
       setTimeout(() => setUpdateToast(null), 4000);
       return;
     }
@@ -187,24 +219,14 @@ export default function App() {
       return;
     }
 
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        setNotificationsEnabled(true);
-        setUpdateToast('🔔 Notificações ativadas com sucesso!');
-        setTimeout(() => setUpdateToast(null), 4000);
-
-        new Notification('MF JOGOS', {
-          body: 'Notificações ativadas! Você será avisado quando a vitrine de casas for atualizada.',
-          icon: '/apple-touch-icon.png'
-        });
-      } else {
-        setUpdateToast('⚠️ Permissão para notificações foi negada no navegador.');
-        setTimeout(() => setUpdateToast(null), 4000);
-      }
-    } catch (err) {
-      console.error('Error requesting notification permission:', err);
+    const ok = await requestNotificationPermission();
+    if (ok) {
+      setNotificationsEnabled(true);
+      setUpdateToast('🔔 Notificações ativadas com sucesso para seu celular!');
+    } else {
+      setUpdateToast('⚠️ Permissão para notificações negada ou indisponível.');
     }
+    setTimeout(() => setUpdateToast(null), 4000);
   };
 
   const handleOpenAdminTrigger = () => {
@@ -272,6 +294,16 @@ export default function App() {
     await saveHousesToFirestore(newHouses);
   };
 
+  const handleSavePixConfig = async (newConfig: PixDaSorteConfig) => {
+    setPixConfig(newConfig);
+    try {
+      localStorage.setItem('mf_pix_config_v1', JSON.stringify(newConfig));
+    } catch (e) {
+      console.error('Error saving pixConfig to localStorage:', e);
+    }
+    await savePixDaSorteConfigInFirestore(newConfig);
+  };
+
   const handleResetDefaults = async () => {
     if (confirm('Deseja restaurar a lista padrão inicial de casas de apostas para todos os usuários?')) {
       setHouses(INITIAL_HOUSES);
@@ -329,6 +361,7 @@ export default function App() {
         onLogoutAdmin={handleLogoutAdmin}
         notificationsEnabled={notificationsEnabled}
         onToggleNotifications={handleToggleNotifications}
+        onOpenPixDaSorte={() => setIsPixModalOpen(true)}
       />
 
       <main className="flex-1">
@@ -338,6 +371,7 @@ export default function App() {
           onScrollToHouses={handleScrollToHouses}
           onOpenCalculator={() => setIsCalculatorOpen(true)}
           onOpenRoulette={() => setIsRouletteOpen(true)}
+          onOpenPixDaSorte={() => setIsPixModalOpen(true)}
         />
 
         {/* Exclusive Podium Section */}
@@ -347,6 +381,9 @@ export default function App() {
             onOpenHouseDetail={setSelectedHouseForDetail}
             copiedCode={copiedCode}
             onCopyCode={handleCopyCode}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            houseClicks={analytics.houseClicks}
           />
         </div>
 
@@ -386,6 +423,7 @@ export default function App() {
         onClose={() => setSelectedHouseForDetail(null)}
         copiedCode={copiedCode}
         onCopyCode={handleCopyCode}
+        houseClicks={analytics.houseClicks}
       />
 
       <BonusCalculator
@@ -418,7 +456,17 @@ export default function App() {
         onChangePassword={handleChangeAdminPassword}
         analytics={analytics}
         onResetAnalytics={resetAnalyticsInFirestore}
+        pixConfig={pixConfig}
+        onSavePixConfig={handleSavePixConfig}
       />
+
+      <PixDaSorteModal
+        isOpen={isPixModalOpen}
+        onClose={() => setIsPixModalOpen(false)}
+        config={pixConfig}
+      />
+
+      <NotificationBanner />
 
     </div>
   );

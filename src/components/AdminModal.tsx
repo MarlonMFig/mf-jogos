@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Plus, Trash2, Save, RotateCcw, Link as LinkIcon, Check, Shield, Upload, Image as ImageIcon, DollarSign, Trophy, Sparkles, KeyRound, LogOut, Lock, Gift, BarChart3, MousePointerClick, Users, Copy, TrendingUp } from 'lucide-react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { X, Settings, Plus, Trash2, Save, RotateCcw, Link as LinkIcon, Check, Shield, Upload, Image as ImageIcon, DollarSign, Trophy, Sparkles, KeyRound, LogOut, Lock, Gift, BarChart3, MousePointerClick, Users, Copy, TrendingUp, Dices, Clock, Bell, Smartphone, Send, BellRing } from 'lucide-react';
 import { BettingHouse } from '../types';
-import { SiteAnalytics } from '../lib/firebase';
+import { SiteAnalytics, PixDaSorteConfig, DEFAULT_PIX_DA_SORTE, formatToDatetimeLocal, parseEventDateSafely } from '../lib/firebase';
+import { 
+  getNotificationSubscribersCount, 
+  broadcastPushNotification, 
+  AutoNotificationSettings, 
+  DEFAULT_AUTO_NOTIFICATIONS, 
+  getAutoNotificationSettings, 
+  saveAutoNotificationSettings,
+  triggerAutoNewHouseNotification,
+  triggerAutoPromoNotification,
+  triggerAutoPixSorteNotification
+} from '../lib/notifications';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -14,6 +26,8 @@ interface AdminModalProps {
   onChangePassword?: (newPassword: string) => void;
   analytics?: SiteAnalytics;
   onResetAnalytics?: () => Promise<boolean> | void;
+  pixConfig?: PixDaSorteConfig;
+  onSavePixConfig?: (config: PixDaSorteConfig) => Promise<boolean> | void;
 }
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -26,14 +40,53 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   adminPassword = 'admin123',
   onChangePassword,
   analytics,
-  onResetAnalytics
+  onResetAnalytics,
+  pixConfig = DEFAULT_PIX_DA_SORTE,
+  onSavePixConfig
 }) => {
   const [tempHouses, setTempHouses] = useState<BettingHouse[]>(houses);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'stats' | 'podium' | 'add' | 'password'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'pix_da_sorte' | 'notifications' | 'podium' | 'add' | 'password'>('stats');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // Notification Broadcast State
+  const [notifTitle, setNotifTitle] = useState('🔥 NOVO PIX DA SORTE LIBERADO!');
+  const [notifBody, setNotifBody] = useState('Corra para o site e garanta seu PIX de R$ 50,00 no MF JOGOS!');
+  const [notifUrl, setNotifUrl] = useState('/');
+  const [subscribersCount, setSubscribersCount] = useState<number>(0);
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+  const [notifSuccessMsg, setNotifSuccessMsg] = useState<string | null>(null);
+
+  // Auto Notification Config State
+  const [autoSettings, setAutoSettings] = useState<AutoNotificationSettings>(DEFAULT_AUTO_NOTIFICATIONS);
+  const [isSavingAutoNotif, setIsSavingAutoNotif] = useState(false);
+  const [autoNotifSuccessMsg, setAutoNotifSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'notifications') {
+      getNotificationSubscribersCount().then(setSubscribersCount);
+      getAutoNotificationSettings().then(setAutoSettings);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (isOpen) {
+      getAutoNotificationSettings().then(setAutoSettings);
+    }
+  }, [isOpen]);
+
+  // Pix da Sorte Form State
+  const [pixActive, setPixActive] = useState<boolean>(pixConfig.active);
+  const [pixEventDate, setPixEventDate] = useState<string>(pixConfig.eventDate);
+  const [pixValue, setPixValue] = useState<number>(pixConfig.pixValue);
+  const [pixTotalPrizes, setPixTotalPrizes] = useState<number>(pixConfig.totalPrizes);
+  const [pixClaimedPrizes, setPixClaimedPrizes] = useState<number>(pixConfig.claimedPrizes);
+  const [pixWinOdds, setPixWinOdds] = useState<number>(pixConfig.winOddsPercentage);
+  const [pixInstructions, setPixInstructions] = useState<string>(pixConfig.adminInstructions);
+  const [isSavingPix, setIsSavingPix] = useState(false);
+  const [pixSaveSuccess, setPixSaveSuccess] = useState(false);
 
   // Password change state
   const [passCurrent, setPassCurrent] = useState('');
@@ -57,12 +110,53 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [newPodiumBadgeStyle, setNewPodiumBadgeStyle] = useState<'purple' | 'gold' | 'emerald' | 'blue'>('purple');
   const [newRollover, setNewRollover] = useState('1x valor do bônus');
 
-  // Sync tempHouses when houses updates or when modal opens
+  // Sync tempHouses when modal opens or houses prop updates
   useEffect(() => {
     if (isOpen) {
       setTempHouses(houses);
     }
+  }, [isOpen, houses]);
+
+  // Sync pixConfig form fields only when modal is newly opened
+  useEffect(() => {
+    if (isOpen && pixConfig) {
+      setPixActive(pixConfig.active);
+      setPixEventDate(formatToDatetimeLocal(pixConfig.eventDate));
+      setPixValue(pixConfig.pixValue);
+      setPixTotalPrizes(pixConfig.totalPrizes);
+      setPixClaimedPrizes(Math.max(pixConfig.claimedPrizes || 0, pixConfig.winners?.length || 0));
+      setPixWinOdds(pixConfig.winOddsPercentage);
+      setPixInstructions(pixConfig.adminInstructions);
+    }
   }, [isOpen]);
+
+  // Keep pixClaimedPrizes synced automatically with live pixConfig
+  useEffect(() => {
+    if (pixConfig) {
+      setPixClaimedPrizes(Math.max(pixConfig.claimedPrizes || 0, pixConfig.winners?.length || 0));
+    }
+  }, [pixConfig]);
+
+  // Chart data for Recharts (Last 7 Days)
+  const chartData = React.useMemo(() => {
+    const data = [];
+    const today = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const isoKey = d.toISOString().slice(0, 10);
+      const formattedLabel = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+
+      const visits = analytics?.dailyVisits?.[isoKey] ?? 0;
+      data.push({
+        date: formattedLabel,
+        fullDate: isoKey,
+        visitas: visits,
+      });
+    }
+    return data;
+  }, [analytics?.dailyVisits]);
 
   if (!isOpen) return null;
 
@@ -256,6 +350,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       await onSaveHouses(updatedHouses);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+
+      // Trigger auto push notification for new house if enabled
+      triggerAutoNewHouseNotification(created.name, created.bonusTitle);
+      if (created.promoCode || created.podiumBadgeText?.includes('PROMO')) {
+        triggerAutoPromoNotification(created.name, created.bonusTitle);
+      }
     } catch (err) {
       console.error('Erro ao salvar nova casa:', err);
       alert('Erro ao salvar no banco de dados. Tente novamente.');
@@ -352,6 +452,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           >
             <BarChart3 className="w-4 h-4 text-amber-400" />
             <span>📊 Estatísticas e Cliques</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pix_da_sorte')}
+            className={`pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'pix_da_sorte'
+                ? 'border-emerald-500 text-emerald-400 font-extrabold'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Dices className="w-4 h-4 text-emerald-400" />
+            <span>🎁 Pix da Sorte</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'notifications'
+                ? 'border-cyan-500 text-cyan-400 font-extrabold'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <BellRing className="w-4 h-4 text-cyan-400" />
+            <span>📱 Notificações Celular</span>
           </button>
 
           <button
@@ -465,6 +589,73 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               </div>
 
+              {/* Recharts Daily Visits Chart */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 text-cyan-400" /> Histórico de Visitas Diárias (Últimos 7 Dias)
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Evolução do tráfego diário no site nos últimos 7 dias.
+                    </p>
+                  </div>
+                  <span className="text-[10px] bg-cyan-500/10 text-cyan-300 px-2.5 py-1 rounded-lg border border-cyan-500/20 font-mono font-bold">
+                    Visitas / Dia
+                  </span>
+                </div>
+
+                <div className="h-60 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="visitGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#64748b"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke="#64748b"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        allowDecimals={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#020617',
+                          borderColor: '#334155',
+                          borderRadius: '12px',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                        }}
+                        labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
+                        formatter={(value: number) => [`${value} visitas`, 'Visitas']}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="visitas"
+                        stroke="#06b6d4"
+                        strokeWidth={3}
+                        fillOpacity={1}
+                        fill="url(#visitGradient)"
+                        activeDot={{ r: 6, fill: '#38bdf8', stroke: '#020617', strokeWidth: 2 }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
               {/* Platform Performance Table */}
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
@@ -525,6 +716,548 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       );
                     })
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 0.5: PIX DA SORTE CAMPAIGN CONFIG */}
+          {activeTab === 'pix_da_sorte' && (
+            <div className="space-y-6">
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Dices className="w-5 h-5 text-emerald-400" /> Configuração do Pix da Sorte
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Defina o dia, horário, valor do PIX e quantidade de ganhadores da promoção.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      if (!onSavePixConfig) return;
+                      setIsSavingPix(true);
+                      const updatedConfig: PixDaSorteConfig = {
+                        active: pixActive,
+                        eventDate: pixEventDate,
+                        pixValue: Number(pixValue) || 50,
+                        totalPrizes: Number(pixTotalPrizes) || 5,
+                        claimedPrizes: Number(pixClaimedPrizes) || 0,
+                        winOddsPercentage: Number(pixWinOdds) || 15,
+                        adminInstructions: pixInstructions,
+                        winners: pixConfig.winners || []
+                      };
+                      await onSavePixConfig(updatedConfig);
+                      setIsSavingPix(false);
+                      setPixSaveSuccess(true);
+                      setTimeout(() => setPixSaveSuccess(false), 3000);
+
+                      // If active, trigger auto notification for Pix da Sorte
+                      if (pixActive) {
+                        triggerAutoPixSorteNotification(updatedConfig.pixValue);
+                      }
+                    }}
+                    disabled={isSavingPix}
+                    className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSavingPix ? 'Salvando...' : 'Salvar Pix da Sorte'}</span>
+                  </button>
+                </div>
+
+                {pixSaveSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-xl text-xs text-emerald-300 font-bold flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>Configurações do Pix da Sorte salvas com sucesso no banco de dados!</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                  {/* Active Toggle */}
+                  <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <label className="font-extrabold text-slate-200 block">Status da Promoção</label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={pixActive}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setPixActive(val);
+                          if (onSavePixConfig) {
+                            onSavePixConfig({
+                              active: val,
+                              eventDate: pixEventDate,
+                              pixValue: Number(pixValue) || 50,
+                              totalPrizes: Number(pixTotalPrizes) || 5,
+                              claimedPrizes: Number(pixClaimedPrizes) || 0,
+                              winOddsPercentage: Number(pixWinOdds) || 15,
+                              adminInstructions: pixInstructions,
+                              winners: pixConfig.winners || []
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                      />
+                      {(() => {
+                        const parsed = parseEventDateSafely(pixEventDate);
+                        const isExp = Boolean(parsed && new Date() >= parsed);
+                        if (!pixActive) return <span className="font-bold text-slate-500">⏸️ Promoção Pausada</span>;
+                        if (isExp) return <span className="font-bold text-amber-400">⏰ Expirada (Prazo Atingido)</span>;
+                        return <span className="font-bold text-emerald-400">✅ Promoção Ativa no Site</span>;
+                      })()}
+                    </label>
+                  </div>
+
+                  {/* Day and Hour */}
+                  <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                    <label className="font-extrabold text-slate-200 block">Data e Horário do Sorteio</label>
+                    <input
+                      type="datetime-local"
+                      value={pixEventDate}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPixEventDate(val);
+                        if (onSavePixConfig) {
+                          onSavePixConfig({
+                            active: pixActive,
+                            eventDate: val,
+                            pixValue: Number(pixValue) || 50,
+                            totalPrizes: Number(pixTotalPrizes) || 5,
+                            claimedPrizes: Number(pixClaimedPrizes) || 0,
+                            winOddsPercentage: Number(pixWinOdds) || 15,
+                            adminInstructions: pixInstructions,
+                            winners: pixConfig.winners || []
+                          });
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Valor do Pix */}
+                  <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                    <label className="font-extrabold text-slate-200 block">Valor de cada PIX (R$)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={pixValue}
+                      onChange={(e) => setPixValue(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Quantidade Total de Pix */}
+                  <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                    <label className="font-extrabold text-slate-200 block">Qtd. Total de PIX Disponíveis</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={pixTotalPrizes}
+                      onChange={(e) => setPixTotalPrizes(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Quantidade Resgatada */}
+                  <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="font-extrabold text-slate-200 block">Qtd. de PIX Já Resgatados</label>
+                      <span className="text-[10px] text-emerald-400 font-bold px-1.5 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20 animate-pulse">
+                        Auto-Sync
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={pixClaimedPrizes}
+                        onChange={(e) => setPixClaimedPrizes(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 text-emerald-400 font-black rounded-lg px-3 py-1.5 text-xs font-mono outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPixClaimedPrizes(0)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-bold shrink-0 cursor-pointer"
+                        title="Zerar contador de prêmios resgatados"
+                      >
+                        Zerar
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block">
+                      Sincronizado em tempo real com o número de ganhadores ({pixConfig.winners?.length || 0}).
+                    </span>
+                  </div>
+
+                  {/* Chance de Ganhar */}
+                  <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                    <label className="font-extrabold text-slate-200 block">Chance de Ganhar (% RNG)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={pixWinOdds}
+                      onChange={(e) => setPixWinOdds(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Instructions Textarea */}
+                <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                  <label className="font-extrabold text-slate-200 block text-xs">
+                    Instruções para o Ganhador Resgatar
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={pixInstructions}
+                    onChange={(e) => setPixInstructions(e.target.value)}
+                    placeholder="Instruções exibidas para quem ganhar o PIX..."
+                    className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-xs outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Registered Winners List Table */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Trophy className="w-4 h-4 text-emerald-400" /> Lista de Ganhadores Registrados ({pixConfig.winners?.length || 0})
+                  </h4>
+
+                  {pixConfig.winners?.length > 0 && onSavePixConfig && (
+                    <button
+                      onClick={async () => {
+                        if (confirm('Deseja limpar o histórico de ganhadores do Pix da Sorte?')) {
+                          await onSavePixConfig({
+                            ...pixConfig,
+                            winners: [],
+                            claimedPrizes: 0
+                          });
+                          setPixClaimedPrizes(0);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold rounded-lg text-[11px] cursor-pointer"
+                    >
+                      Limpar Lista de Ganhadores
+                    </button>
+                  )}
+                </div>
+
+                {!pixConfig.winners || pixConfig.winners.length === 0 ? (
+                  <p className="text-slate-500 text-xs py-4 text-center border border-dashed border-slate-800 rounded-xl">
+                    Nenhum ganhador registrado ainda nesta rodada do Pix da Sorte.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-[10px] font-black uppercase text-slate-400 bg-slate-900/60">
+                          <th className="p-3">Nome do Ganhador</th>
+                          <th className="p-3">Chave PIX</th>
+                          <th className="p-3">Valor</th>
+                          <th className="p-3">Data e Hora</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {pixConfig.winners.map((winner) => (
+                          <tr key={winner.id} className="hover:bg-slate-900/40">
+                            <td className="p-3 font-sans font-bold text-white">{winner.name}</td>
+                            <td className="p-3 text-emerald-400 font-bold">{winner.pixKey}</td>
+                            <td className="p-3 text-amber-300">R$ {winner.prizeValue},00</td>
+                            <td className="p-3 text-slate-400 text-[11px]">
+                              {new Date(winner.timestamp).toLocaleString('pt-BR')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 0.8: PWA PUSH NOTIFICATIONS */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6">
+              {/* Header Info */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Smartphone className="w-5 h-5 text-cyan-400" /> Notificações PWA / Tela de Início
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Dispare notificações instantâneas direto na tela do celular de quem adicionou o ícone do MF JOGOS.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 px-3.5 py-1.5 rounded-xl">
+                    <Bell className="w-4 h-4 text-cyan-400 animate-pulse" />
+                    <span className="text-xs font-black text-cyan-300">
+                      {subscribersCount} {subscribersCount === 1 ? 'Dispositivo Cadastrado' : 'Dispositivos Cadastrados'}
+                    </span>
+                  </div>
+                </div>
+
+                {notifSuccessMsg && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-xl text-xs text-emerald-300 font-bold flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>{notifSuccessMsg}</span>
+                  </div>
+                )}
+
+                {/* Form Broadcast */}
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-1 text-xs">
+                    <label className="font-extrabold text-slate-200 block">Título da Notificação</label>
+                    <input
+                      type="text"
+                      value={notifTitle}
+                      onChange={(e) => setNotifTitle(e.target.value)}
+                      placeholder="Ex: 🔥 NOVO PIX DA SORTE LIBERADO!"
+                      className="w-full bg-slate-900 border border-slate-700 text-white font-bold rounded-xl px-3 py-2 text-xs outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1 text-xs">
+                    <label className="font-extrabold text-slate-200 block">Mensagem da Notificação</label>
+                    <textarea
+                      rows={3}
+                      value={notifBody}
+                      onChange={(e) => setNotifBody(e.target.value)}
+                      placeholder="Ex: Entre agora no site e garanta seu PIX de R$ 50,00 ou confira as novas casas com bônus sem depósito!"
+                      className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-xl p-3 text-xs outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1 text-xs">
+                    <label className="font-extrabold text-slate-200 block">URL de Destino ao Clicar na Notificação</label>
+                    <input
+                      type="text"
+                      value={notifUrl}
+                      onChange={(e) => setNotifUrl(e.target.value)}
+                      placeholder="/"
+                      className="w-full bg-slate-900 border border-slate-700 text-cyan-300 font-mono rounded-xl px-3 py-2 text-xs outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSendingNotif}
+                    onClick={async () => {
+                      if (!notifTitle || !notifBody) {
+                        alert('Preencha o título e a mensagem antes de disparar!');
+                        return;
+                      }
+                      setIsSendingNotif(true);
+                      const ok = await broadcastPushNotification(notifTitle, notifBody, notifUrl);
+                      setIsSendingNotif(false);
+                      if (ok) {
+                        setNotifSuccessMsg('🚀 Notificação disparada com sucesso para os dispositivos inscritos!');
+                        setTimeout(() => setNotifSuccessMsg(null), 4000);
+                      }
+                    }}
+                    className="w-full py-3 bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 hover:from-cyan-400 hover:to-emerald-300 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/20 transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{isSendingNotif ? 'Enviando Notificação...' : 'Disparar Notificação para Dispositivos'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Explanatory Guide Box */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3 text-xs">
+                <h4 className="font-extrabold text-white text-sm flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-amber-400" /> Como funciona o envio para a Tela de Início dos Usuários?
+                </h4>
+                <ul className="space-y-2 text-slate-400 list-disc list-inside">
+                  <li>
+                    <strong className="text-slate-200">Android & iPhone/iOS (iOS 16.4+)</strong>: Quando o usuário instala o aplicativo adicionando à Tela de Início e clica em <span className="text-amber-400 font-bold">"🔔 Ativar Notificações"</span>, o dispositivo dele autoriza a recepção de alertas.
+                  </li>
+                  <li>
+                    <strong className="text-slate-200">Identificação Automática</strong>: O código guarda a inscrição do aparelho no banco de dados Firestore sob a coleção <code className="text-cyan-400">notification_subscribers</code>.
+                  </li>
+                  <li>
+                    <strong className="text-slate-200">Alerta Nativo</strong>: A mensagem aparece direto na barra de notificações do celular do usuário com vibração e o ícone do MF JOGOS.
+                  </li>
+                </ul>
+              </div>
+
+              {/* AUTOMATIC EVENT ALERTS CONFIGURATION */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-amber-500/30 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-base font-black text-amber-400 flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-amber-400 animate-spin" /> Configurar Alertas Automáticos por Evento
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      O sistema enviará alertas automáticos no celular dos usuários sempre que estes eventos acontecerem.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSavingAutoNotif}
+                    onClick={async () => {
+                      setIsSavingAutoNotif(true);
+                      const ok = await saveAutoNotificationSettings(autoSettings);
+                      setIsSavingAutoNotif(false);
+                      if (ok) {
+                        setAutoNotifSuccessMsg('✅ Configurações de Alertas Automáticos salvas no banco de dados!');
+                        setTimeout(() => setAutoNotifSuccessMsg(null), 3500);
+                      } else {
+                        alert('Erro ao salvar alertas automáticos. Tente novamente.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/20 transition-all"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSavingAutoNotif ? 'Salvando...' : 'Salvar Alertas Automáticos'}</span>
+                  </button>
+                </div>
+
+                {autoNotifSuccessMsg && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-xl text-xs text-emerald-300 font-bold flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>{autoNotifSuccessMsg}</span>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {/* EVENT 1: NOVA CASA ADICIONADA */}
+                  <div className="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="font-extrabold text-white text-xs flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-emerald-400" /> 1. Nova Casa de Apostas Adicionada
+                      </label>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoSettings.autoNewHouseEnabled}
+                          onChange={(e) => setAutoSettings({ ...autoSettings, autoNewHouseEnabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+
+                    {autoSettings.autoNewHouseEnabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Título do Alerta</label>
+                          <input
+                            type="text"
+                            value={autoSettings.autoNewHouseTitle}
+                            onChange={(e) => setAutoSettings({ ...autoSettings, autoNewHouseTitle: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 text-white font-bold rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-400"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Modelo da Mensagem</label>
+                          <input
+                            type="text"
+                            value={autoSettings.autoNewHouseBody}
+                            onChange={(e) => setAutoSettings({ ...autoSettings, autoNewHouseBody: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-400"
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 md:col-span-2">
+                          Variáveis disponíveis: <code className="text-amber-400 font-mono">{'{houseName}'}</code> (Nome da Casa) e <code className="text-amber-400 font-mono">{'{bonusTitle}'}</code> (Título do Bônus).
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* EVENT 2: PROMOÇÃO OU BÔNUS POR TEMPO LIMITADO */}
+                  <div className="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="font-extrabold text-white text-xs flex items-center gap-2">
+                        <Gift className="w-4 h-4 text-purple-400" /> 2. Promoção / Bônus Por Tempo Limitado
+                      </label>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoSettings.autoPromoEnabled}
+                          onChange={(e) => setAutoSettings({ ...autoSettings, autoPromoEnabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+                      </label>
+                    </div>
+
+                    {autoSettings.autoPromoEnabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Título do Alerta</label>
+                          <input
+                            type="text"
+                            value={autoSettings.autoPromoTitle}
+                            onChange={(e) => setAutoSettings({ ...autoSettings, autoPromoTitle: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 text-white font-bold rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-purple-400"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Modelo da Mensagem</label>
+                          <input
+                            type="text"
+                            value={autoSettings.autoPromoBody}
+                            onChange={(e) => setAutoSettings({ ...autoSettings, autoPromoBody: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-purple-400"
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 md:col-span-2">
+                          Variáveis disponíveis: <code className="text-purple-400 font-mono">{'{houseName}'}</code> e <code className="text-purple-400 font-mono">{'{bonusTitle}'}</code>.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* EVENT 3: PIX DA SORTE ATIVADO */}
+                  <div className="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="font-extrabold text-white text-xs flex items-center gap-2">
+                        <Dices className="w-4 h-4 text-cyan-400" /> 3. Pix da Sorte Ativado / Liberado
+                      </label>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoSettings.autoPixSorteEnabled}
+                          onChange={(e) => setAutoSettings({ ...autoSettings, autoPixSorteEnabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+                      </label>
+                    </div>
+
+                    {autoSettings.autoPixSorteEnabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Título do Alerta</label>
+                          <input
+                            type="text"
+                            value={autoSettings.autoPixSorteTitle}
+                            onChange={(e) => setAutoSettings({ ...autoSettings, autoPixSorteTitle: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 text-white font-bold rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Modelo da Mensagem</label>
+                          <input
+                            type="text"
+                            value={autoSettings.autoPixSorteBody}
+                            onChange={(e) => setAutoSettings({ ...autoSettings, autoPixSorteBody: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 md:col-span-2">
+                          Variáveis disponíveis: <code className="text-cyan-400 font-mono">{'{pixValue}'}</code> (Valor em Reais, ex: 50).
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

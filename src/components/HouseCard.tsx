@@ -1,23 +1,32 @@
 import React from 'react';
-import { ExternalLink, Zap, Copy, Check, Shield, Gift, CheckCircle2, Sparkles } from 'lucide-react';
+import { ExternalLink, Zap, Copy, Check, Shield, Gift, CheckCircle2, Sparkles, MousePointerClick } from 'lucide-react';
 import { BettingHouse } from '../types';
+import { recordClickInFirestore, getHouseClicks } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface HouseCardProps {
   house: BettingHouse;
+  index?: number;
   onOpenHouseDetail: (house: BettingHouse) => void;
   copiedCode: string | null;
   onCopyCode: (code: string) => void;
+  houseClicks?: Record<string, number>;
 }
 
 export const HouseCard: React.FC<HouseCardProps> = ({
   house,
+  index = 0,
   onOpenHouseDetail,
   copiedCode,
-  onCopyCode
+  onCopyCode,
+  houseClicks
 }) => {
+  const clicks = getHouseClicks(houseClicks, house.id);
+
   const handleClaimBonus = (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    recordClickInFirestore(house.id);
 
     try {
       confetti({
@@ -35,8 +44,9 @@ export const HouseCard: React.FC<HouseCardProps> = ({
 
   return (
     <div
+      style={{ animationDelay: `${index * 60}ms`, animationFillMode: 'both' }}
       onClick={() => onOpenHouseDetail(house)}
-      className="group relative bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-3xl p-5 sm:p-6 transition-all duration-200 cursor-pointer flex flex-col justify-between hover:shadow-xl hover:shadow-amber-500/5"
+      className="group relative bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 sm:p-6 transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-[1.015] hover:shadow-2xl hover:shadow-amber-500/10 cursor-pointer flex flex-col justify-between animate-in fade-in zoom-in-95"
     >
       <div>
         {/* Top Header */}
@@ -60,6 +70,12 @@ export const HouseCard: React.FC<HouseCardProps> = ({
                 )}
               </h3>
             </div>
+          </div>
+
+          {/* Access Count Badge */}
+          <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 px-2.5 py-1 rounded-xl text-[11px] font-bold text-slate-300 shrink-0 shadow-sm" title="Total de acessos a esta plataforma">
+            <MousePointerClick className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{clicks.toLocaleString('pt-BR')}</span>
           </div>
         </div>
 
@@ -174,7 +190,7 @@ export const HouseCard: React.FC<HouseCardProps> = ({
           onClick={handleClaimBonus}
           className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm tracking-wide rounded-2xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 cursor-pointer"
         >
-          <span>PEGAR BÔNUS</span>
+          <span>ACESSAR</span>
           <ExternalLink className="w-4 h-4" />
         </button>
 

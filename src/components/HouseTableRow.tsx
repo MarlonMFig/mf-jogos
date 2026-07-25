@@ -1,6 +1,7 @@
 import React from 'react';
-import { ExternalLink, Shield, Check, Copy, Gift, Sparkles } from 'lucide-react';
+import { ExternalLink, Shield, Check, Copy, Gift, Sparkles, MousePointerClick } from 'lucide-react';
 import { BettingHouse } from '../types';
+import { recordClickInFirestore, recordCopyInFirestore, getHouseClicks } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface HouseTableRowProps {
@@ -9,6 +10,7 @@ interface HouseTableRowProps {
   onOpenHouseDetail: (house: BettingHouse) => void;
   copiedCode: string | null;
   onCopyCode: (code: string) => void;
+  houseClicks?: Record<string, number>;
 }
 
 export const HouseTableRow: React.FC<HouseTableRowProps> = ({
@@ -16,10 +18,15 @@ export const HouseTableRow: React.FC<HouseTableRowProps> = ({
   index,
   onOpenHouseDetail,
   copiedCode,
-  onCopyCode
+  onCopyCode,
+  houseClicks
 }) => {
+  const clicks = getHouseClicks(houseClicks, house.id);
+
   const handleClaimBonus = (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    recordClickInFirestore(house.id);
 
     try {
       confetti({
@@ -37,8 +44,9 @@ export const HouseTableRow: React.FC<HouseTableRowProps> = ({
 
   return (
     <tr 
+      style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
       onClick={() => onOpenHouseDetail(house)}
-      className="bg-slate-900/60 hover:bg-slate-900 transition-colors border-b border-slate-800/80 cursor-pointer text-sm"
+      className="bg-slate-900/60 hover:bg-slate-900 transition-colors border-b border-slate-800/80 cursor-pointer text-sm animate-in fade-in"
     >
       {/* Position # */}
       <td className="p-4 font-black text-slate-500 text-center w-12">
@@ -71,18 +79,12 @@ export const HouseTableRow: React.FC<HouseTableRowProps> = ({
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[10px] font-black tracking-wider text-red-500 bg-[#1f0b10] border border-red-600/80 shadow-sm">
                 +18
               </span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[10px] font-bold text-slate-300 bg-slate-950 border border-slate-800 shadow-sm" title="Total de acessos a esta plataforma">
+                <MousePointerClick className="w-3 h-3 text-emerald-400" />
+                {clicks.toLocaleString('pt-BR')} {clicks === 1 ? 'acesso' : 'acessos'}
+              </span>
             </div>
           </div>
-        </div>
-      </td>
-
-      {/* Bonus Details */}
-      <td className="p-4 min-w-[240px]">
-        <div className="font-extrabold text-amber-300 text-sm">
-          {house.bonusTitle}
-        </div>
-        <div className="text-xs text-slate-400 line-clamp-1">
-          {house.bonusDescription}
         </div>
       </td>
 
@@ -101,35 +103,13 @@ export const HouseTableRow: React.FC<HouseTableRowProps> = ({
         </div>
       </td>
 
-      {/* Promo Code */}
-      <td className="p-4 min-w-[140px]">
-        {house.promoCode ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (house.promoCode) onCopyCode(house.promoCode);
-            }}
-            className="flex items-center gap-1.5 bg-slate-950 border border-slate-700 hover:border-amber-500/50 px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-          >
-            <span className="font-mono font-bold text-amber-400">{house.promoCode}</span>
-            {copiedCode === house.promoCode ? (
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 text-slate-400" />
-            )}
-          </button>
-        ) : (
-          <span className="text-xs text-slate-500">Automático</span>
-        )}
-      </td>
-
       {/* Action Button */}
       <td className="p-4 text-right min-w-[150px]">
         <button
           onClick={handleClaimBonus}
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2 rounded-xl font-extrabold text-xs inline-flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
         >
-          <span>PEGAR BÔNUS</span>
+          <span>ACESSAR</span>
           <ExternalLink className="w-3.5 h-3.5" />
         </button>
       </td>

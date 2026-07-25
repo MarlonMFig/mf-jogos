@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Shield, ExternalLink, Copy, Check, CheckCircle2, AlertCircle, ArrowRight, Gift, FileText, Sparkles } from 'lucide-react';
+import { X, Shield, ExternalLink, Copy, Check, CheckCircle2, AlertCircle, ArrowRight, Gift, FileText, Sparkles, MousePointerClick } from 'lucide-react';
 import { BettingHouse } from '../types';
-import { recordClickInFirestore, recordCopyInFirestore } from '../lib/firebase';
+import { recordClickInFirestore, recordCopyInFirestore, getHouseClicks } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface HouseDetailModalProps {
@@ -9,15 +9,18 @@ interface HouseDetailModalProps {
   onClose: () => void;
   copiedCode: string | null;
   onCopyCode: (code: string) => void;
+  houseClicks?: Record<string, number>;
 }
 
 export const HouseDetailModal: React.FC<HouseDetailModalProps> = ({
   house,
   onClose,
   copiedCode,
-  onCopyCode
+  onCopyCode,
+  houseClicks
 }) => {
   if (!house) return null;
+  const clicks = getHouseClicks(houseClicks, house.id);
 
   const handleClaimBonus = () => {
     if (house) {
@@ -70,6 +73,10 @@ export const HouseDetailModal: React.FC<HouseDetailModalProps> = ({
                 )}
                 <span className="inline-flex items-center px-2 py-0.5 rounded-xl text-xs font-black tracking-wider text-red-500 bg-[#1f0b10] border border-red-600/80 shadow-sm">
                   +18
+                </span>
+                <span className="inline-flex items-center gap-1 bg-slate-900 border border-slate-700/80 text-slate-300 text-xs px-2.5 py-0.5 rounded-full font-bold shadow-sm" title="Total de acessos">
+                  <MousePointerClick className="w-3.5 h-3.5 text-emerald-400" />
+                  {clicks.toLocaleString('pt-BR')} {clicks === 1 ? 'acesso' : 'acessos'}
                 </span>
               </div>
             </div>

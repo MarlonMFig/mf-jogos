@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, ShieldCheck, Lock, LogOut, X, Menu, Bell, BellRing } from 'lucide-react';
+import { Trophy, ShieldCheck, Lock, LogOut, X, Menu, Bell, BellRing, Dices, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   searchQuery: string;
@@ -10,6 +10,7 @@ interface HeaderProps {
   onLogoutAdmin: () => void;
   notificationsEnabled: boolean;
   onToggleNotifications: () => void;
+  onOpenPixDaSorte?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,7 +21,8 @@ export const Header: React.FC<HeaderProps> = ({
   isAdminAuthenticated,
   onLogoutAdmin,
   notificationsEnabled,
-  onToggleNotifications
+  onToggleNotifications,
+  onOpenPixDaSorte
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -32,10 +34,13 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Logo Brand */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="relative group cursor-pointer">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500 via-amber-400 to-yellow-300 p-0.5 shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform duration-300">
-                <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                  <Trophy className="w-6 h-6 text-amber-400 group-hover:rotate-12 transition-transform duration-300" />
-                </div>
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500/20 via-amber-400/10 to-yellow-300/20 p-0.5 shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform duration-300">
+                <img 
+                  src="/logo.svg" 
+                  alt="MF JOGOS Logo" 
+                  className="w-full h-full object-contain rounded-[10px]"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="pulsing-dot animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -52,8 +57,6 @@ export const Header: React.FC<HeaderProps> = ({
                   Oficial
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-              </p>
             </div>
           </div>
 
@@ -79,11 +82,9 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
 
-            <div className="hidden sm:flex items-center gap-2 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
+            <div className="hidden lg:flex items-center gap-2 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="font-semibold text-emerald-400">{totalHouses} Plataformas</span>
-              <span className="text-slate-500">|</span>
-              <span className="text-slate-400">Verificadas</span>
             </div>
 
             {isAdminAuthenticated ? (
