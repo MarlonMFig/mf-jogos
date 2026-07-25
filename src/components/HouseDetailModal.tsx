@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Shield, ExternalLink, Copy, Check, CheckCircle2, AlertCircle, ArrowRight, Gift, FileText, Sparkles } from 'lucide-react';
 import { BettingHouse } from '../types';
+import { recordClickInFirestore, recordCopyInFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface HouseDetailModalProps {
@@ -19,6 +20,10 @@ export const HouseDetailModal: React.FC<HouseDetailModalProps> = ({
   if (!house) return null;
 
   const handleClaimBonus = () => {
+    if (house) {
+      recordClickInFirestore(house.id);
+    }
+
     try {
       confetti({
         particleCount: 80,
@@ -103,7 +108,12 @@ export const HouseDetailModal: React.FC<HouseDetailModalProps> = ({
                   <span className="font-mono font-bold text-amber-400 text-base">{house.promoCode}</span>
                 </div>
                 <button
-                  onClick={() => house.promoCode && onCopyCode(house.promoCode)}
+                  onClick={() => {
+                    if (house.promoCode) {
+                      recordCopyInFirestore(house.id);
+                      onCopyCode(house.promoCode);
+                    }
+                  }}
                   className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {copiedCode === house.promoCode ? (

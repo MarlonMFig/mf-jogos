@@ -12,8 +12,18 @@ import { Footer } from './components/Footer';
 
 import { INITIAL_HOUSES } from './data/initialHouses';
 import { BettingHouse, Category } from './types';
-import { subscribeHouses, saveHousesToFirestore, resetHousesInFirestore, subscribeAdminSettings, saveAdminPasswordToFirestore } from './lib/firebase';
-import { Sparkles, Trophy, Settings, RefreshCw, ExternalLink } from 'lucide-react';
+import {
+  subscribeHouses,
+  saveHousesToFirestore,
+  resetHousesInFirestore,
+  subscribeAdminSettings,
+  saveAdminPasswordToFirestore,
+  subscribeAnalytics,
+  resetAnalyticsInFirestore,
+  recordVisitInFirestore,
+  SiteAnalytics
+} from './lib/firebase';
+import { Sparkles, Trophy, Settings, RefreshCw, ExternalLink, Bell, BellRing, Check, X } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'mf_jogos_houses_v3';
 
@@ -80,16 +90,64 @@ export default function App() {
   // Copy toast feedback
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  // Notification & Live update toasts
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+  });
+  const [updateToast, setUpdateToast] = useState<string | null>(null);
+  const isInitialHousesLoad = useRef(true);
+
   const housesSectionRef = useRef<HTMLDivElement>(null);
+
+  // Analytics state
+  const [analytics, setAnalytics] = useState<SiteAnalytics>({
+    totalVisits: 0,
+    totalClicks: 0,
+    totalCopies: 0,
+    houseClicks: {},
+    houseCopies: {}
+  });
 
   // Subscribe to real-time Firestore database updates
   useEffect(() => {
+    // Record visit on page mount
+    recordVisitInFirestore();
+
+    // Subscribe to site analytics
+    const unsubscribeAnalytics = subscribeAnalytics((data) => {
+      setAnalytics(data);
+    });
+
     const unsubscribeHouses = subscribeHouses((updatedHouses) => {
       setHouses(updatedHouses);
       try {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHouses));
       } catch (e) {
         console.error('Error saving to localStorage:', e);
+      }
+
+      // Check if this is a real-time update after initial load
+      if (isInitialHousesLoad.current) {
+        isInitialHousesLoad.current = false;
+      } else {
+        // Show in-app live update toast
+        setUpdateToast('⚡ A lista de casas e bônus foi atualizada em tempo real!');
+        setTimeout(() => {
+          setUpdateToast(null);
+        }, 5000);
+
+        // Trigger native browser push notification if permission granted
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification('MF JOGOS', {
+              body: 'A vitrine de casas de apostas foi atualizada com novidades!',
+              icon: '/apple-touch-icon.png',
+              badge: '/favicon.svg'
+            });
+          } catch (err) {
+            console.warn('Browser notification error:', err);
+          }
+        }
       }
     });
 
@@ -105,10 +163,49 @@ export default function App() {
     });
 
     return () => {
+      unsubscribeAnalytics();
       unsubscribeHouses();
       unsubscribeSettings();
     };
   }, []);
+
+  const handleToggleNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setUpdateToast('Notificações de navegador não são suportadas neste dispositivo.');
+      setTimeout(() => setUpdateToast(null), 4000);
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      setNotificationsEnabled(!notificationsEnabled);
+      setUpdateToast(
+        !notificationsEnabled
+          ? '🔔 Notificações ativadas! Alertas serão exibidos em atualizações.'
+          : '🔕 Notificações de navegador silenciadas.'
+      );
+      setTimeout(() => setUpdateToast(null), 4000);
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setNotificationsEnabled(true);
+        setUpdateToast('🔔 Notificações ativadas com sucesso!');
+        setTimeout(() => setUpdateToast(null), 4000);
+
+        new Notification('MF JOGOS', {
+          body: 'Notificações ativadas! Você será avisado quando a vitrine de casas for atualizada.',
+          icon: '/apple-touch-icon.png'
+        });
+      } else {
+        setUpdateToast('⚠️ Permissão para notificações foi negada no navegador.');
+        setTimeout(() => setUpdateToast(null), 4000);
+      }
+    } catch (err) {
+      console.error('Error requesting notification permission:', err);
+    }
+  };
 
   const handleOpenAdminTrigger = () => {
     if (isAdminAuthenticated) {
@@ -206,6 +303,22 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       
+      {/* Realtime Update Toast Notification Banner */}
+      {updateToast && (
+        <div className="fixed top-22 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 px-4 py-3 rounded-2xl shadow-2xl border border-amber-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-2.5">
+            <Bell className="w-5 h-5 shrink-0 animate-bounce text-slate-950" />
+            <span className="text-xs sm:text-sm font-black tracking-tight">{updateToast}</span>
+          </div>
+          <button
+            onClick={() => setUpdateToast(null)}
+            className="p-1 hover:bg-slate-950/10 rounded-lg text-slate-950 cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Main Header */}
       <Header
         searchQuery={searchQuery}
@@ -214,6 +327,8 @@ export default function App() {
         totalHouses={houses.length}
         isAdminAuthenticated={isAdminAuthenticated}
         onLogoutAdmin={handleLogoutAdmin}
+        notificationsEnabled={notificationsEnabled}
+        onToggleNotifications={handleToggleNotifications}
       />
 
       <main className="flex-1">
@@ -301,6 +416,8 @@ export default function App() {
         onLogout={handleLogoutAdmin}
         adminPassword={adminPassword}
         onChangePassword={handleChangeAdminPassword}
+        analytics={analytics}
+        onResetAnalytics={resetAnalyticsInFirestore}
       />
 
     </div>

@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, onSnapshot, setDoc, writeBatch, collection, getDocs, Firestore } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot, setDoc, writeBatch, collection, getDocs, Firestore, increment } from 'firebase/firestore';
 import firebaseConfigData from '../../firebase-applet-config.json';
 import { BettingHouse } from '../types';
 import { INITIAL_HOUSES } from '../data/initialHouses';
@@ -189,6 +189,135 @@ export async function saveAdminPasswordToFirestore(newPassword: string): Promise
     return true;
   } catch (err) {
     console.warn('Firestore admin password save failed:', err);
+    return false;
+  }
+}
+
+export interface SiteAnalytics {
+  totalVisits: number;
+  totalClicks: number;
+  totalCopies: number;
+  houseClicks: Record<string, number>;
+  houseCopies: Record<string, number>;
+  updatedAt?: string;
+}
+
+const ANALYTICS_DOC_REF = () => doc(db, 'stats', 'analytics');
+
+/**
+ * Subscribe to real-time analytics data from Firestore.
+ */
+export function subscribeAnalytics(onUpdate: (stats: SiteAnalytics) => void) {
+  const statsRef = ANALYTICS_DOC_REF();
+
+  const unsubscribe = onSnapshot(
+    statsRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as Partial<SiteAnalytics>;
+        onUpdate({
+          totalVisits: Number(data.totalVisits || 0),
+          totalClicks: Number(data.totalClicks || 0),
+          totalCopies: Number(data.totalCopies || 0),
+          houseClicks: data.houseClicks || {},
+          houseCopies: data.houseCopies || {},
+          updatedAt: data.updatedAt,
+        });
+      } else {
+        onUpdate({
+          totalVisits: 0,
+          totalClicks: 0,
+          totalCopies: 0,
+          houseClicks: {},
+          houseCopies: {},
+        });
+      }
+    },
+    (error) => {
+      console.warn('Firestore analytics listener error:', error);
+    }
+  );
+
+  return unsubscribe;
+}
+
+/**
+ * Record a page visit in Firestore.
+ */
+export async function recordVisitInFirestore(): Promise<void> {
+  try {
+    const statsRef = ANALYTICS_DOC_REF();
+    await setDoc(
+      statsRef,
+      {
+        totalVisits: increment(1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn('Error recording visit to Firestore:', e);
+  }
+}
+
+/**
+ * Record a click on a betting house affiliate link.
+ */
+export async function recordClickInFirestore(houseId: string): Promise<void> {
+  try {
+    const statsRef = ANALYTICS_DOC_REF();
+    const cleanId = houseId.replace(/[\.\/\[\]]/g, '_');
+    await setDoc(
+      statsRef,
+      {
+        totalClicks: increment(1),
+        [`houseClicks.${cleanId}`]: increment(1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn('Error recording click to Firestore:', e);
+  }
+}
+
+/**
+ * Record a promo code copy event.
+ */
+export async function recordCopyInFirestore(houseId?: string): Promise<void> {
+  try {
+    const statsRef = ANALYTICS_DOC_REF();
+    const updatePayload: Record<string, any> = {
+      totalCopies: increment(1),
+      updatedAt: new Date().toISOString(),
+    };
+    if (houseId) {
+      const cleanId = houseId.replace(/[\.\/\[\]]/g, '_');
+      updatePayload[`houseCopies.${cleanId}`] = increment(1);
+    }
+    await setDoc(statsRef, updatePayload, { merge: true });
+  } catch (e) {
+    console.warn('Error recording promo copy to Firestore:', e);
+  }
+}
+
+/**
+ * Reset all analytics counters in Firestore.
+ */
+export async function resetAnalyticsInFirestore(): Promise<boolean> {
+  try {
+    const statsRef = ANALYTICS_DOC_REF();
+    await setDoc(statsRef, {
+      totalVisits: 0,
+      totalClicks: 0,
+      totalCopies: 0,
+      houseClicks: {},
+      houseCopies: {},
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (e) {
+    console.warn('Error resetting analytics in Firestore:', e);
     return false;
   }
 }

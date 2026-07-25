@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, ShieldCheck, Lock, LogOut, X, Menu } from 'lucide-react';
+import { Trophy, ShieldCheck, Lock, LogOut, X, Menu, Bell, BellRing } from 'lucide-react';
 
 interface HeaderProps {
   searchQuery: string;
@@ -8,6 +8,8 @@ interface HeaderProps {
   totalHouses: number;
   isAdminAuthenticated: boolean;
   onLogoutAdmin: () => void;
+  notificationsEnabled: boolean;
+  onToggleNotifications: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,7 +18,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdmin,
   totalHouses,
   isAdminAuthenticated,
-  onLogoutAdmin
+  onLogoutAdmin,
+  notificationsEnabled,
+  onToggleNotifications
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -54,7 +58,27 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Quick Actions & Live Indicator */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Notification Toggle Button */}
+            <button
+              onClick={onToggleNotifications}
+              className={`p-2 rounded-xl border text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                notificationsEnabled
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 hover:bg-amber-500/20 shadow-sm shadow-amber-500/10'
+                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+              title={notificationsEnabled ? 'Notificações Ativadas' : 'Ativar Notificações'}
+            >
+              {notificationsEnabled ? (
+                <BellRing className="w-4 h-4 text-amber-400 animate-pulse" />
+              ) : (
+                <Bell className="w-4 h-4" />
+              )}
+              <span className="hidden lg:inline text-[11px] font-medium">
+                {notificationsEnabled ? 'Notificações On' : 'Notificações'}
+              </span>
+            </button>
+
             <div className="hidden sm:flex items-center gap-2 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="font-semibold text-emerald-400">{totalHouses} Plataformas</span>

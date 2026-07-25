@@ -30,6 +30,18 @@
           "description": "Timestamp of last update"
         }
       }
+    },
+    "stats/analytics": {
+      "title": "Site Analytics",
+      "description": "Global site statistics tracking visits, platform clicks, and promo code copies",
+      "type": "object",
+      "properties": {
+        "totalVisits": { "type": "number" },
+        "totalClicks": { "type": "number" },
+        "totalCopies": { "type": "number" },
+        "houseClicks": { "type": "object" },
+        "houseCopies": { "type": "object" }
+      }
     }
   }
 }

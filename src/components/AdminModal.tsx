@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Plus, Trash2, Save, RotateCcw, Link as LinkIcon, Check, Shield, Upload, Image as ImageIcon, DollarSign, Trophy, Sparkles, KeyRound, LogOut, Lock, Gift } from 'lucide-react';
+import { X, Settings, Plus, Trash2, Save, RotateCcw, Link as LinkIcon, Check, Shield, Upload, Image as ImageIcon, DollarSign, Trophy, Sparkles, KeyRound, LogOut, Lock, Gift, BarChart3, MousePointerClick, Users, Copy, TrendingUp } from 'lucide-react';
 import { BettingHouse } from '../types';
+import { SiteAnalytics } from '../lib/firebase';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface AdminModalProps {
   onLogout?: () => void;
   adminPassword?: string;
   onChangePassword?: (newPassword: string) => void;
+  analytics?: SiteAnalytics;
+  onResetAnalytics?: () => Promise<boolean> | void;
 }
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -21,12 +24,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onResetDefaults,
   onLogout,
   adminPassword = 'admin123',
-  onChangePassword
+  onChangePassword,
+  analytics,
+  onResetAnalytics
 }) => {
   const [tempHouses, setTempHouses] = useState<BettingHouse[]>(houses);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'podium' | 'add' | 'password'>('podium');
+  const [activeTab, setActiveTab] = useState<'stats' | 'podium' | 'add' | 'password'>('stats');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -338,6 +343,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         {/* Tab Navigation */}
         <div className="flex border-b border-slate-800 bg-slate-950/50 px-6 pt-3 gap-4 overflow-x-auto">
           <button
+            onClick={() => setActiveTab('stats')}
+            className={`pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'stats'
+                ? 'border-amber-500 text-amber-400 font-extrabold'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-amber-400" />
+            <span>📊 Estatísticas e Cliques</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('podium')}
             className={`pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'podium'
@@ -374,8 +391,144 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          
-          {/* TAB 1: PODIUM UPDATE */}
+
+          {/* TAB 0: SITE ANALYTICS & STATS */}
+          {activeTab === 'stats' && (
+            <div className="space-y-6">
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-amber-400" /> Estatísticas em Tempo Real do Site
+                  </h3>
+                  <p className="text-xs text-slate-400">Acompanhe acessos de visitantes e cliques nos seus links de afiliado.</p>
+                </div>
+                {onResetAnalytics && (
+                  <button
+                    onClick={async () => {
+                      if (confirm('Deseja zerar todas as estatísticas de cliques e acessos do site?')) {
+                        await onResetAnalytics();
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Zerar Estatísticas
+                  </button>
+                )}
+              </div>
+
+              {/* Metric Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-bold uppercase tracking-wider">Acessos Totais</span>
+                    <Users className="w-4 h-4 text-cyan-400" />
+                  </div>
+                  <div className="text-2xl font-black text-white font-mono">
+                    {analytics?.totalVisits || 0}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Pessoas que acessaram o site</p>
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-bold uppercase tracking-wider">Cliques nos Links</span>
+                    <MousePointerClick className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="text-2xl font-black text-emerald-400 font-mono">
+                    {analytics?.totalClicks || 0}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Redirecionamentos para plataformas</p>
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-bold uppercase tracking-wider">Cupons Copiados</span>
+                    <Copy className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-2xl font-black text-amber-400 font-mono">
+                    {analytics?.totalCopies || 0}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Códigos promocionais copiados</p>
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-bold uppercase tracking-wider">Taxa de Cliques</span>
+                    <TrendingUp className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="text-2xl font-black text-purple-300 font-mono">
+                    {analytics?.totalVisits && analytics.totalVisits > 0
+                      ? ((analytics.totalClicks / analytics.totalVisits) * 100).toFixed(1) + '%'
+                      : '0.0%'}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Conversão de visita para clique</p>
+                </div>
+              </div>
+
+              {/* Platform Performance Table */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <Trophy className="w-4 h-4 text-amber-400" /> Desempenho de Cliques por Plataforma
+                </h4>
+
+                <div className="space-y-3">
+                  {tempHouses.length === 0 ? (
+                    <p className="text-slate-500 text-xs">Nenhuma casa cadastrada.</p>
+                  ) : (
+                    tempHouses.map((house) => {
+                      const cleanId = house.id.replace(/[\.\/\[\]]/g, '_');
+                      const clicks = analytics?.houseClicks?.[cleanId] || analytics?.houseClicks?.[house.id] || 0;
+                      const copies = analytics?.houseCopies?.[cleanId] || analytics?.houseCopies?.[house.id] || 0;
+                      const totalC = analytics?.totalClicks || 1;
+                      const percentage = totalC > 0 ? Math.min(100, Math.round((clicks / totalC) * 100)) : 0;
+
+                      return (
+                        <div key={house.id} className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-[200px]">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-md overflow-hidden bg-slate-950 shrink-0 border border-slate-700"
+                              style={{ backgroundColor: house.brandColor }}
+                            >
+                              {house.logoUrl ? (
+                                <img src={house.logoUrl} alt={house.name} className="w-full h-full object-cover" />
+                              ) : (
+                                house.name.slice(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div>
+                              <span className="font-extrabold text-white text-sm block">{house.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono truncate block max-w-[180px]">
+                                {house.affiliateUrl}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 w-full sm:max-w-xs space-y-1">
+                            <div className="flex justify-between text-[11px] font-mono">
+                              <span className="text-emerald-400 font-bold">{clicks} cliques</span>
+                              <span className="text-slate-400">{percentage}% do total</span>
+                            </div>
+                            <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                              <div
+                                className="bg-gradient-to-r from-emerald-500 to-amber-400 h-full rounded-full transition-all duration-500"
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs bg-amber-500/10 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-500/20 font-mono font-bold">
+                              {copies} cupons copiados
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === 'podium' && (
             <div className="space-y-6">
               <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-xs text-amber-300 flex items-center justify-between gap-3 flex-wrap">

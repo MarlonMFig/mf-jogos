@@ -1,6 +1,7 @@
 import React from 'react';
 import { Crown, ExternalLink, Zap, Gift, Shield, Sparkles } from 'lucide-react';
 import { BettingHouse } from '../types';
+import { recordClickInFirestore } from '../lib/firebase';
 import confetti from 'canvas-confetti';
 
 interface PodiumProps {
@@ -34,6 +35,9 @@ export const Podium: React.FC<PodiumProps> = ({
   const handleClaimBonus = (e: React.MouseEvent, house: BettingHouse) => {
     e.stopPropagation();
     
+    // Record click event in analytics
+    recordClickInFirestore(house.id);
+
     // Trigger festive confetti effect
     try {
       confetti({
